@@ -1,0 +1,25 @@
+.claude/settings.local.json
+.claude/projects/
+*.asv
+.history/
+
+# session scratch + docs excluded from this repo
+agent_handoffs/
+docs/ULM_PIPELINE_INTERVIEW_REF.md
+
+# machine-local path config (copy reanalysis_config.template.m -> reanalysis_config.m)
+reanalysis/reanalysis_config.m
+
+# machine-local path config for learned/ (copy the .template.{m,py} -> learned_config.{m,py})
+learned/learned_config.m
+learned/learned_config.py
+
+# python caches
+__pycache__/
+*.pyc
+
+# learned pipeline: model weights are NOT distributed (system-specific PSF; retrain
+# per system -- see learned/README.md) + scratch artifacts / measured PSF caches
+learned/**/*.pt
+learned/artifacts/
+learned/**/*.npz

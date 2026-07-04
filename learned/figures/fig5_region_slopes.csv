@@ -1,0 +1,17 @@
+region,series,slope,ci_lo,ci_hi
+Operating (L1-M2),Classical,0.785,0.666,1.100
+Operating (L1-M2),Deep-ULM,1.100,0.774,1.481
+Operating (L1-M2),LISTA,1.123,0.780,1.503
+Operating (L1-M2),SVD B-mode,0.781,0.637,1.119
+Transition (M2-U2),Classical,0.430,0.349,0.482
+Transition (M2-U2),Deep-ULM,0.652,0.530,0.873
+Transition (M2-U2),LISTA,0.769,0.622,1.009
+Transition (M2-U2),SVD B-mode,0.834,0.732,0.915
+Saturating (U2-U5),Classical,0.167,0.108,0.303
+Saturating (U2-U5),Deep-ULM,0.234,0.070,0.419
+Saturating (U2-U5),LISTA,0.260,0.060,0.503
+Saturating (U2-U5),SVD B-mode,0.630,0.452,0.774
+Quantitative_2band (L1-U2),Classical,0.508,0.467,0.585
+Quantitative_2band (L1-U2),Deep-ULM,0.731,0.635,0.873
+Quantitative_2band (L1-U2),LISTA,0.800,0.698,0.952
+Quantitative_2band (L1-U2),SVD B-mode,0.720,0.661,0.809
