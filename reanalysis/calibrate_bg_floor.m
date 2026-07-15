@@ -1,8 +1,37 @@
 function cal = calibrate_bg_floor(bgIQ, profile, meta, opts)
+% ============================ SUPERSEDED. DEAD CODE. DO NOT USE. ============================
+%
+% This function is NOT called by REANALYSIS_RUNNER.m, which explicitly rejects it in its
+% non-negotiables (line ~17): "Its calibrate_bg_floor / process_IQ_block / track_microbubbles
+% / filter_tracks_quality / QC-track count path is the WRONG logic and is NOT carried over.
+% The count metric remains the in-tube LOCALIZATION RATE (per-frame detect_microbubbles
+% 'fixed' -> ROI-mask count / nFrames; NO tracking, NO QC)."
+%
+% It is retained only because BATCH_REANALYSIS_2DATASET.m's jun23 MANIFEST DATA was reused.
+% Nothing else from that path survives.
+%
+% TWO CLAIMS IN THE DOCSTRING BELOW ARE FALSE AND HAVE COST REAL TIME (2026-07-14):
+%   1. "so the bubble-free Bg blocks yield ~0 detections" -- the shipped thresholds yield
+%      12-18 false loc/frame in all six (dataset x domain) combinations. The count is
+%      unbiased via the Bg PEDESTAL SUBTRACTION, not via a clean threshold.
+%   2. "The COUNT axis counts QC-tracks" (line ~56) -- it does not. That was the ABANDONED
+%      design. The count is the localization RATE, no tracking, no QC. This sentence sent an
+%      investigation down the tracking path for hours.
+% Also: opts.tolLocPerFrame is documented as default 0.05 below but the code sets 8.
+%
+% Before resurrecting ANY of this, read docs/FINDINGS_2026_07_14_threshold_ceiling_and_psf.md.
+% In particular section 4: raising the detection threshold to a false-alarm-free point
+% AMPLITUDE-SELECTS and inflates the concentration-response slope. Tracking is separately
+% attractive (kinematically gated Bg gives ~0 tracks) but adds a DENSITY-dependent linking
+% bias that is confounded with the density dependence this project exists to measure.
+%
+% ===========================================================================================
+%
 % CALIBRATE_BG_FLOOR  Fixed detection threshold + Bg track-floor from bubble-free blocks.
 %
 %   cal = calibrate_bg_floor(bgIQ, profile, meta, opts)
 %
+% [HISTORICAL DOCSTRING, RETAINED FOR CONTEXT; SEE THE CORRECTIONS ABOVE]
 % Calibrates profile.det.fixedThresh (for det.method='fixed') so the bubble-free Bg
 % blocks yield ~0 detections. Per PHASE2A_BUILD_SPEC_v2.md Part B / Risk R-DET-F1:
 % the threshold is swept in LOC-RATE space (running the full detector incl 3x3 NMS +

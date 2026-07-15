@@ -1167,7 +1167,30 @@ function r = local_block_readout(IQf, psfBlock, masks, g, thr, cfg)
                'locRate_fov', numel(allR)/nF, 'nF', nF, 'dens', dens);
 end
 
-% Per-domain threshold sweep on the flowing-bg blocks -> clean-floor knee.
+% Per-domain detection threshold from the flowing-bg blocks.
+%
+% WHAT THIS ACTUALLY RETURNS: prctile(envPool, 99.9), the ceiling of its own candidate range.
+% NOT a calibrated knee. The tolerance search below never succeeds and always falls through to
+% the min(falseRate) branch, which selects the largest candidate, which is `hi`. Verified on
+% all six (dataset x domain) combinations: every shipped threshold is within 2% of its own
+% p99.9, and the measured Bg false-alarm rate at those thresholds is 12-18 loc/frame against
+% the nominal tol of 0.02. See docs/FINDINGS_2026_07_14_threshold_ceiling_and_psf.md.
+%
+% WHY IT IS LEFT THIS WAY, DELIBERATELY:
+%  (a) p99.9 is a defensible operating point, though not for the reason the code implies. It is
+%      a bias/variance compromise: lower thr catches more dim bubbles but subtracts a bigger
+%      pedestal (variance); higher thr subtracts less but is progressively amplitude-selected
+%      (bias). The count is unbiased at ANY threshold because the noise floor is
+%      concentration-independent, so the Bg pedestal subtraction is exact.
+%  (b) REACHING the 0.02 tolerance would make things WORSE, not better. A false-alarm-free
+%      threshold counts only the bright subset, and the bright fraction grows with
+%      concentration (8.3% -> 51.1% across the jun23 ladder), fabricating a slope increase of
+%      +0.364. The tolerance is the wrong design goal for this metric.
+%  (c) The value is preserved exactly so all published results reproduce.
+%
+% The tolerance/knee machinery below is therefore ABANDONED-IN-PLACE, not repaired. Do not
+% "fix" it by widening the candidate range. If you want a different operating point, change it
+% deliberately and re-derive every downstream number, knowing (b).
 function [thr, curve] = local_sweep_threshold(domain, bgCachePaths, roi, cfg)
     % Gather domain envelopes + per-block combinedTube masks + per-block grid for
     % each Bg block. Store the real envelope (abs) once (halves memory vs complex
@@ -1227,24 +1250,46 @@ function [thr, curve] = local_sweep_threshold(domain, bgCachePaths, roi, cfg)
     else
         okIdx = lastDirty + 1;          % first candidate above the last dirty one
     end
+    tolMet = true;
     if okIdx > numel(falseRate)
-        [~, okIdx] = min(falseRate);    % none stays clean: take the cleanest
-        fprintf('  [sweep %s] WARNING: no candidate stayed <= tol=%.3f; using cleanest thr.\n', ...
-            domain, cfg.thrSweep.tolLocPerFrame);
+        % EXPECTED PATH, always taken. The candidate ceiling (prctile(envPool,99.9), whole-FOV)
+        % sits below the in-tube peaks, so no candidate reaches tol and we return `hi` itself.
+        % This is documented and deliberate, NOT a silent degradation: see the function header
+        % and docs/FINDINGS_2026_07_14_threshold_ceiling_and_psf.md. The count stays unbiased
+        % via the Bg pedestal subtraction (the noise floor is concentration-independent).
+        tolMet = false;
+        [~, okIdx] = min(falseRate);
+        fprintf(['  [sweep %s] tol NOT met (expected): no candidate reaches %.3f loc/frame.\n' ...
+                 '             thr = p99.9 CEILING of the candidate range, not a knee.\n' ...
+                 '             Bg false rate at thr = %.2f loc/frame; the Bg PEDESTAL\n' ...
+                 '             SUBTRACTION is what makes the count unbiased. Do NOT raise thr\n' ...
+                 '             to chase tol: that amplitude-selects and inflates the slope.\n'], ...
+            domain, cfg.thrSweep.tolLocPerFrame, falseRate(okIdx));
     end
     thr = cand(okIdx);
-    curve = struct('thr',cand, 'falseRate',falseRate, 'knee',thr, 'tol',cfg.thrSweep.tolLocPerFrame);
+    % 'knee' is kept as a FIELD NAME for backward compatibility with saved readouts; it is the
+    % p99.9 ceiling whenever tolMet is false, which is always. tolMet records which it is.
+    curve = struct('thr',cand, 'falseRate',falseRate, 'knee',thr, 'tol',cfg.thrSweep.tolLocPerFrame, ...
+                   'tolMet',tolMet, 'isCeiling',~tolMet);
 
     % --- ROC-like curve PNG (white) ---
     try
         fig = figure('Visible','off','Color','w','Position',[60 60 760 520]);
         ax = axes('Parent',fig); set(ax,'Color','w'); hold(ax,'on');
         semilogy(ax, cand, max(falseRate,1e-4), 'o-', 'Color',[0.1 0.3 0.7], 'LineWidth',1.6);
-        yline(ax, cfg.thrSweep.tolLocPerFrame, '--', 'tol', 'Color',[0.6 0 0]);
-        xline(ax, thr, '-', sprintf('knee=%.4g', thr), 'Color',[0 0.5 0]);
+        yline(ax, cfg.thrSweep.tolLocPerFrame, '--', 'tol (never reached)', 'Color',[0.6 0 0]);
+        if tolMet
+            lbl = sprintf('knee=%.4g', thr); ttl = sprintf('Threshold sweep [%s]: knee=%.4g (tol=%.3f MET)', ...
+                domain, thr, cfg.thrSweep.tolLocPerFrame);
+        else
+            lbl = sprintf('CEILING=%.4g (p99.9)', thr);
+            ttl = sprintf(['Threshold [%s]: p99.9 CEILING=%.4g, NOT a knee (tol=%.3f unmet; Bg=%.1f loc/frame)\n' ...
+                           'count stays unbiased via Bg pedestal subtraction; do NOT raise thr to chase tol'], ...
+                domain, thr, cfg.thrSweep.tolLocPerFrame, falseRate(okIdx));
+        end
+        xline(ax, thr, '-', lbl, 'Color',[0 0.5 0]);
         xlabel(ax,'fixed envelope threshold'); ylabel(ax,'in-tube false loc/frame (Bg)');
-        title(ax, sprintf('Threshold sweep [%s]: knee=%.4g (tol=%.3f)', domain, thr, cfg.thrSweep.tolLocPerFrame), ...
-            'Interpreter','none');
+        title(ax, ttl, 'Interpreter','none');
         local_check_disk_space(cfg.outputRoot, cfg.minFreeGB_write, ['thr sweep ' domain]);
         exportgraphics(fig, fullfile(cfg.outputRoot, sprintf('thr_sweep_%s.png',domain)), ...
             'Resolution',150, 'BackgroundColor','white');
