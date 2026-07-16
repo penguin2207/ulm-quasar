@@ -982,6 +982,25 @@ function g = local_load_any_grid(blocks, polCacheDir)
 end
 
 % PSF: load + validate + extract a compact odd kernel; write psf_validation.png.
+%
+% THE ANALYTICAL MODEL PSF IS CORRECT. DO NOT REPLACE IT WITH AN EMPIRICALLY "MEASURED" ONE.
+% The shipped psf.mat measures 0.2456 mm lateral / 0.0694 mm axial, i.e. the aperture-limited
+% model (0.2447 / 0.0694), 3.5:1 anisotropic. Two independent reasons it should stay:
+%
+%   (a) A microbubble is 1-3 um against a ~245 um resolution cell: a point scatterer ~100x
+%       smaller than the cell, so its image IS the PSF. The PSF is diffraction-limited a
+%       priori and there is nothing for a measurement to add. The lateral figure is set by
+%       the receive aperture (this front end reads 64 of 256 elements, F# ~ 3.5 at 20 mm);
+%       the axial is bandwidth-limited at ~lambda and does not improve with aperture.
+%
+%   (b) A width measurement CANNOT VALIDATE ITSELF here. Speckle is the PSF convolved with
+%       random scatterers, so speckle carries the SAME diffraction-limited width as a real
+%       bubble: any width / shape / r^2 test returns ~the PSF whether or not bubbles are
+%       present. Only AMPLITUDE discriminates, and amplitude selection is itself
+%       concentration-biased (it favours well-centred, hence sharper, bubbles). Empirical
+%       "measurements" of 0.349 mm and 0.252 mm were both produced this way and both retracted;
+%       a 0.059 mm "measured axial" was below the lambda = 0.0694 bandwidth floor, i.e.
+%       physically impossible. If you measure a PSF here, expect to measure your estimator.
 function psf = local_load_psf(psfFile, dz_mm, dx_mm, cfg)
     if ~exist(psfFile, 'file')
         error('APR17:NoPSF', 'PSF file not found: %s', psfFile);
@@ -1174,7 +1193,8 @@ end
 % the min(falseRate) branch, which selects the largest candidate, which is `hi`. Verified on
 % all six (dataset x domain) combinations: every shipped threshold is within 2% of its own
 % p99.9, and the measured Bg false-alarm rate at those thresholds is 12-18 loc/frame against
-% the nominal tol of 0.02. See docs/FINDINGS_2026_07_14_threshold_ceiling_and_psf.md.
+% the nominal tol of 0.02. The cause: envPool is subsampled over the WHOLE FOV, but the tube is
+% a small fraction of that FOV, so p99.9 of the pooled envelope sits BELOW the in-tube peaks.
 %
 % WHY IT IS LEFT THIS WAY, DELIBERATELY:
 %  (a) p99.9 is a defensible operating point, though not for the reason the code implies. It is
@@ -1254,9 +1274,10 @@ function [thr, curve] = local_sweep_threshold(domain, bgCachePaths, roi, cfg)
     if okIdx > numel(falseRate)
         % EXPECTED PATH, always taken. The candidate ceiling (prctile(envPool,99.9), whole-FOV)
         % sits below the in-tube peaks, so no candidate reaches tol and we return `hi` itself.
-        % This is documented and deliberate, NOT a silent degradation: see the function header
-        % and docs/FINDINGS_2026_07_14_threshold_ceiling_and_psf.md. The count stays unbiased
-        % via the Bg pedestal subtraction (the noise floor is concentration-independent).
+        % This is documented and deliberate, NOT a silent degradation: see the function header.
+        % The count stays unbiased via the Bg pedestal subtraction (the noise floor is
+        % concentration-independent, so subtracting the bubble-free rate removes false alarms
+        % exactly).
         tolMet = false;
         [~, okIdx] = min(falseRate);
         fprintf(['  [sweep %s] tol NOT met (expected): no candidate reaches %.3f loc/frame.\n' ...

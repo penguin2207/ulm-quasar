@@ -87,11 +87,13 @@ switch lower(params.method)
         %
         % DO NOT "FIX" THIS BY RAISING THE THRESHOLD to a false-alarm-free point. Doing so
         % counts only the bright subset, and the bright fraction GROWS with concentration
-        % (8.3% at L1 -> 51.1% at U5, via constructive interference between overlapping
-        % bubbles), which fabricates a slope increase (0.474 -> 0.879, entirely accounted for
-        % by the bright-fraction slope of +0.364). A low threshold plus an unbiased pedestal
-        % subtraction is CORRECT; a high threshold with no subtraction is amplitude-selected.
-        % See docs/FINDINGS_2026_07_14_threshold_ceiling_and_psf.md section 4.
+        % (8.3% at the lowest rung -> 51.1% at the highest, via constructive interference
+        % between overlapping bubbles), so a high threshold has RELAXING selectivity as
+        % concentration rises. That inflates the top of the ladder and fabricates a slope
+        % increase: measured 0.474 -> 0.879, entirely accounted for by the bright-fraction
+        % slope of log10(51.1/8.3)/log10(147) = +0.364. A low threshold plus an unbiased
+        % pedestal subtraction is CORRECT; a high threshold with no subtraction is
+        % amplitude-selected. The threshold is a bias/variance choice, not an error.
         thresh = params.fixedThresh;
         detections = find_local_maxima(frame, thresh, params.minSep_mm, dx_mm, dz_mm);
 

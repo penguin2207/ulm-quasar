@@ -19,11 +19,24 @@ function cal = calibrate_bg_floor(bgIQ, profile, meta, opts)
 %      investigation down the tracking path for hours.
 % Also: opts.tolLocPerFrame is documented as default 0.05 below but the code sets 8.
 %
-% Before resurrecting ANY of this, read docs/FINDINGS_2026_07_14_threshold_ceiling_and_psf.md.
-% In particular section 4: raising the detection threshold to a false-alarm-free point
-% AMPLITUDE-SELECTS and inflates the concentration-response slope. Tracking is separately
-% attractive (kinematically gated Bg gives ~0 tracks) but adds a DENSITY-dependent linking
-% bias that is confounded with the density dependence this project exists to measure.
+% TWO REASONS NOT TO RESURRECT ANY OF THIS:
+%
+%   (a) The tolerance goal is WRONG for this metric. Raising the detection threshold to a
+%       false-alarm-free point AMPLITUDE-SELECTS: it counts only the bright subset, and the
+%       bright fraction grows with concentration (8.3% -> 51.1% across the ladder, via
+%       constructive interference between overlapping bubbles), which fabricates a slope
+%       increase of +0.364. The count is ALREADY unbiased at the shipped threshold, because
+%       the noise floor is concentration-independent (beta = -0.016 vs concentration,
+%       bubble-free/rung ratio 1.04-1.10x over a 147x range), so the Bg pedestal subtraction
+%       removes false alarms exactly. The threshold costs precision, not accuracy.
+%
+%   (b) Tracking is separately attractive (kinematically gated Bg gives ~0 tracks over 2000
+%       frames: a far stronger clutter discriminator than any threshold) but it adds a
+%       DENSITY-dependent linking bias that is confounded with the density dependence this
+%       project exists to measure. It also has no capacity advantage: with ~1.3 bubbles per
+%       resolution cell even at the lowest rung, tracks catch only the Poisson-rare isolated
+%       tail, which shrinks as density rises. Tracks buy SPECIFICITY, not capacity, and are
+%       therefore a validator rather than a count metric.
 %
 % ===========================================================================================
 %
