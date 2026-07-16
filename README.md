@@ -43,7 +43,6 @@ core/                              ← main pipelines + processing functions
 reanalysis/                        ← UHF29x phantom concentration-response reanalysis
 ├── REANALYSIS_RUNNER.m            ← entry point (cfg.step 0 = ROI check / 1 = draw+preview / 2 = full)
 ├── fit_concentration_response.m   ← log-log slope fits + bootstrap CIs
-├── calibrate_bg_floor.m           ← background-floor calibration
 └── reanalysis_config.template.m   ← copy to reanalysis_config.m (gitignored, machine-local paths)
 
 preview/                           ← data exploration + QC + parameter tuning

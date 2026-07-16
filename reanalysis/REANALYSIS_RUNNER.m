@@ -12,13 +12,13 @@
 %  fit windows come from the ACTIVE profile.
 %
 %  NON-NEGOTIABLES (carried over from the verified base):
-%    * NOTHING is taken from BATCH_REANALYSIS_2DATASET.m except the jun23 manifest
-%      DATA (rung labels, nominal concs, block counts, bg labels). Its
-%      calibrate_bg_floor / process_IQ_block / track_microbubbles /
-%      filter_tracks_quality / QC-track count path is the WRONG logic and is NOT
-%      carried over. The count metric remains the in-tube LOCALIZATION RATE
-%      (per-frame detect_microbubbles 'fixed' -> ROI-mask count / nFrames; NO
-%      tracking, NO QC) -- identical to apr17.
+%    * The count metric is the in-tube LOCALIZATION RATE: per-frame
+%      detect_microbubbles 'fixed' -> ROI-mask count / nFrames. NO tracking, NO QC,
+%      identical to apr17. The earlier QC-track count path was the WRONG logic and is
+%      not carried over; only the jun23 manifest DATA (rung labels, nominal concs,
+%      block counts, bg labels) was reused from it. Tracking is a strong clutter
+%      discriminator but adds a DENSITY-dependent linking bias, confounded with the
+%      density dependence this project measures: a validator, not a count metric.
 %    * The recipe (polarity beamform -> SVD8 seed 12345 -> per-domain
 %      {PI=pos+neg, fundamental=pos-neg, single-pol=pos} -> SUSHI amp =
 %      mean(|IQf|^2) -> FISTA lambda=0.10 -> quasar_refit post-LASSO -> ROI sum;
@@ -983,24 +983,20 @@ end
 
 % PSF: load + validate + extract a compact odd kernel; write psf_validation.png.
 %
-% THE ANALYTICAL MODEL PSF IS CORRECT. DO NOT REPLACE IT WITH AN EMPIRICALLY "MEASURED" ONE.
-% The shipped psf.mat measures 0.2456 mm lateral / 0.0694 mm axial, i.e. the aperture-limited
-% model (0.2447 / 0.0694), 3.5:1 anisotropic. Two independent reasons it should stay:
+% THE MODEL PSF IS CORRECT. DO NOT REPLACE IT WITH A "MEASURED" ONE. The shipped psf.mat
+% measures 0.2456 lat / 0.0694 ax mm: the aperture-limited model, 3.5:1 anisotropic (lateral
+% set by reading 64 of 256 elements, F# ~ 3.5 at 20 mm; axial bandwidth-limited at ~lambda and
+% aperture-independent). Two reasons:
 %
-%   (a) A microbubble is 1-3 um against a ~245 um resolution cell: a point scatterer ~100x
-%       smaller than the cell, so its image IS the PSF. The PSF is diffraction-limited a
-%       priori and there is nothing for a measurement to add. The lateral figure is set by
-%       the receive aperture (this front end reads 64 of 256 elements, F# ~ 3.5 at 20 mm);
-%       the axial is bandwidth-limited at ~lambda and does not improve with aperture.
-%
-%   (b) A width measurement CANNOT VALIDATE ITSELF here. Speckle is the PSF convolved with
-%       random scatterers, so speckle carries the SAME diffraction-limited width as a real
-%       bubble: any width / shape / r^2 test returns ~the PSF whether or not bubbles are
-%       present. Only AMPLITUDE discriminates, and amplitude selection is itself
-%       concentration-biased (it favours well-centred, hence sharper, bubbles). Empirical
-%       "measurements" of 0.349 mm and 0.252 mm were both produced this way and both retracted;
-%       a 0.059 mm "measured axial" was below the lambda = 0.0694 bandwidth floor, i.e.
-%       physically impossible. If you measure a PSF here, expect to measure your estimator.
+%   (a) A 1-3 um microbubble against a ~245 um resolution cell is a point scatterer ~100x
+%       smaller than the cell, so its image IS the PSF. A measurement adds nothing.
+%   (b) A width measurement cannot validate itself: speckle is the PSF convolved with random
+%       scatterers, so it carries the same width as a bubble and any width/shape/r^2 test
+%       returns ~the PSF whether or not bubbles are present. Only amplitude discriminates, and
+%       amplitude selection favours well-centred (hence sharper) bubbles. Measurements of
+%       0.349 and 0.252 mm were produced this way and retracted; a 0.059 mm "measured axial"
+%       was below the 0.0694 bandwidth floor, i.e. impossible. Measure here and you measure
+%       your estimator.
 function psf = local_load_psf(psfFile, dz_mm, dx_mm, cfg)
     if ~exist(psfFile, 'file')
         error('APR17:NoPSF', 'PSF file not found: %s', psfFile);
@@ -1188,29 +1184,22 @@ end
 
 % Per-domain detection threshold from the flowing-bg blocks.
 %
-% WHAT THIS ACTUALLY RETURNS: prctile(envPool, 99.9), the ceiling of its own candidate range.
-% NOT a calibrated knee. The tolerance search below never succeeds and always falls through to
-% the min(falseRate) branch, which selects the largest candidate, which is `hi`. Verified on
-% all six (dataset x domain) combinations: every shipped threshold is within 2% of its own
-% p99.9, and the measured Bg false-alarm rate at those thresholds is 12-18 loc/frame against
-% the nominal tol of 0.02. The cause: envPool is subsampled over the WHOLE FOV, but the tube is
-% a small fraction of that FOV, so p99.9 of the pooled envelope sits BELOW the in-tube peaks.
+% RETURNS prctile(envPool, 99.9), NOT a calibrated knee. envPool is subsampled over the whole
+% FOV while the tube is a small fraction of it, so p99.9 sits below the in-tube peaks, no
+% candidate reaches tol, and the min(falseRate) fallback returns `hi` itself. All six
+% (dataset x domain): every shipped threshold within 2% of its own p99.9, at 12-18 Bg
+% loc/frame against the nominal 0.02.
 %
-% WHY IT IS LEFT THIS WAY, DELIBERATELY:
-%  (a) p99.9 is a defensible operating point, though not for the reason the code implies. It is
-%      a bias/variance compromise: lower thr catches more dim bubbles but subtracts a bigger
-%      pedestal (variance); higher thr subtracts less but is progressively amplitude-selected
-%      (bias). The count is unbiased at ANY threshold because the noise floor is
-%      concentration-independent, so the Bg pedestal subtraction is exact.
-%  (b) REACHING the 0.02 tolerance would make things WORSE, not better. A false-alarm-free
-%      threshold counts only the bright subset, and the bright fraction grows with
-%      concentration (8.3% -> 51.1% across the jun23 ladder), fabricating a slope increase of
-%      +0.364. The tolerance is the wrong design goal for this metric.
-%  (c) The value is preserved exactly so all published results reproduce.
+% ABANDONED IN PLACE, not repaired, for three reasons:
+%  (a) The count is unbiased at ANY threshold: the noise floor is concentration-independent,
+%      so the Bg pedestal subtraction is exact. The threshold is a bias/variance compromise
+%      (lower catches more dim bubbles but subtracts a bigger pedestal).
+%  (b) Reaching the tolerance would be WORSE: a false-alarm-free threshold amplitude-selects
+%      and fabricates +0.364 of slope (see detect_microbubbles 'fixed').
+%  (c) The value is preserved so published results reproduce.
 %
-% The tolerance/knee machinery below is therefore ABANDONED-IN-PLACE, not repaired. Do not
-% "fix" it by widening the candidate range. If you want a different operating point, change it
-% deliberately and re-derive every downstream number, knowing (b).
+% Do not widen the candidate range to chase tol. A different operating point means re-deriving
+% every downstream number, knowing (b).
 function [thr, curve] = local_sweep_threshold(domain, bgCachePaths, roi, cfg)
     % Gather domain envelopes + per-block combinedTube masks + per-block grid for
     % each Bg block. Store the real envelope (abs) once (halves memory vs complex
@@ -1272,12 +1261,7 @@ function [thr, curve] = local_sweep_threshold(domain, bgCachePaths, roi, cfg)
     end
     tolMet = true;
     if okIdx > numel(falseRate)
-        % EXPECTED PATH, always taken. The candidate ceiling (prctile(envPool,99.9), whole-FOV)
-        % sits below the in-tube peaks, so no candidate reaches tol and we return `hi` itself.
-        % This is documented and deliberate, NOT a silent degradation: see the function header.
-        % The count stays unbiased via the Bg pedestal subtraction (the noise floor is
-        % concentration-independent, so subtracting the bubble-free rate removes false alarms
-        % exactly).
+        % EXPECTED PATH, always taken. Deliberate, not a silent degradation: see the header.
         tolMet = false;
         [~, okIdx] = min(falseRate);
         fprintf(['  [sweep %s] tol NOT met (expected): no candidate reaches %.3f loc/frame.\n' ...
