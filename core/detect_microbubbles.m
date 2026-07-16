@@ -1,12 +1,12 @@
 function detections = detect_microbubbles(frame, params, dx_mm, dz_mm)
 % DETECT_MICROBUBBLES  Detect microbubble candidates in a single frame.
 %
-% Implements two detection approaches:
-%   'threshold' - Adaptive thresholding (N * noise_std) with non-maximum
-%                 suppression. Simple and fast, suitable when PSF is
-%                 well-characterized.
-%   'ncc'       - Normalized cross-correlation with a model PSF, followed
-%                 by peak detection. More robust to varying signal levels.
+% Three methods, all followed by a 3x3 local-max test and grid non-maximum suppression:
+%   'fixed'     - Fixed absolute envelope threshold. Used by the reanalysis; read the
+%                 case below before changing it.
+%   'threshold' - Adaptive (edge noise_mean + N*noise_std). Signal-dependent, so quiet
+%                 low-conc frames admit clutter; superseded by 'fixed'.
+%   'ncc'       - Normalized cross-correlation with a model PSF, then peak detection.
 %
 % Reference: Ackermann D, Schmitz G. "Detection and tracking of multiple
 %            microbubbles in ultrasound B-mode images."
@@ -15,10 +15,12 @@ function detections = detect_microbubbles(frame, params, dx_mm, dz_mm)
 % Inputs:
 %   frame    - [nZ x nX] envelope image (magnitude of IQ)
 %   params   - Struct with fields:
-%              .method      - 'threshold' or 'ncc'
-%              .threshold   - Detection threshold (noise std multiplier)
+%              .method      - 'fixed' | 'threshold' | 'ncc'
+%              .fixedThresh - absolute envelope threshold ('fixed' only)
+%              .threshold   - noise-std multiplier ('threshold', 'ncc')
+%              .psf         - .lateral_mm / .axial_mm model PSF ('ncc' only)
 %              .minSep_mm   - Minimum separation between detections [mm]
-%              .roiSize_px  - ROI size for localization [px]
+%              .roiSize_px  - unused by 'fixed'; kept for struct parity
 %   dx_mm    - Lateral pixel size [mm]
 %   dz_mm    - Axial pixel size [mm]
 %
@@ -67,33 +69,21 @@ switch lower(params.method)
         detections = find_local_maxima(nccMap, thresh, params.minSep_mm, dx_mm, dz_mm);
 
     case 'fixed'
-        % CORRECTED DETECTOR. Fixed absolute envelope threshold in envelope-amplitude
-        % units, so the floor does NOT move with concentration. This is the fix for the
-        % 'threshold' method's real defect (edge-noise * N is signal-dependent: quiet
-        % low-conc frames lower the threshold and admit clutter, making the raw count
-        % anti-correlated with signal at the low end). See FINDINGS_2026_06_11_lowconc_floor.md.
+        % Fixed absolute threshold, so the floor does not move with concentration. This is
+        % the fix for 'threshold', whose edge-noise estimate is signal-dependent and made the
+        % raw count anti-correlated with signal at the low end
+        % (FINDINGS_2026_06_11_lowconc_floor.md).
         %
-        % THE THRESHOLD DOES *NOT* YIELD ~0 DETECTIONS ON BUBBLE-FREE Bg BLOCKS. An earlier
-        % version of this comment claimed it did, citing calibrate_bg_floor.m; both are wrong
-        % and calibrate_bg_floor.m is dead code the runner explicitly rejects. Measured Bg
-        % false-alarm rate at the shipped thresholds is 12-18 loc/frame in all six
-        % (dataset x domain) combinations, ~1000x the nominal 0.02 tolerance.
+        % It does NOT give ~0 detections on bubble-free blocks: 12-18 loc/frame measured at
+        % the shipped thresholds, ~1000x the nominal 0.02 tol. The count is unbiased anyway,
+        % because the noise floor is concentration-independent (beta = -0.016 vs conc,
+        % bubble-free/rung 1.04-1.10x over a 147x range), so the Bg pedestal subtraction
+        % downstream removes the false alarms exactly. This costs precision, not accuracy.
         %
-        % THE COUNT IS NONETHELESS UNBIASED, because the Bg PEDESTAL SUBTRACTION downstream
-        % removes those false alarms exactly: the noise floor is concentration-INDEPENDENT
-        % (measured beta = -0.016 vs conc, rung/BGTF 1.04-1.10x across a 147x range), so the
-        % bubble-free rate is an unbiased estimate of the rung blocks' false-alarm rate.
-        % The threshold sitting inside the noise costs PRECISION, not ACCURACY.
-        %
-        % DO NOT "FIX" THIS BY RAISING THE THRESHOLD to a false-alarm-free point. Doing so
-        % counts only the bright subset, and the bright fraction GROWS with concentration
-        % (8.3% at the lowest rung -> 51.1% at the highest, via constructive interference
-        % between overlapping bubbles), so a high threshold has RELAXING selectivity as
-        % concentration rises. That inflates the top of the ladder and fabricates a slope
-        % increase: measured 0.474 -> 0.879, entirely accounted for by the bright-fraction
-        % slope of log10(51.1/8.3)/log10(147) = +0.364. A low threshold plus an unbiased
-        % pedestal subtraction is CORRECT; a high threshold with no subtraction is
-        % amplitude-selected. The threshold is a bias/variance choice, not an error.
+        % DO NOT raise the threshold to make Bg clean. That counts only the bright subset,
+        % whose fraction grows with concentration (8.3% -> 51.1%), so selectivity relaxes as
+        % concentration rises and the slope inflates: 0.474 -> 0.879, all of it the +0.364
+        % bright-fraction slope. The threshold is a bias/variance choice, not an error.
         thresh = params.fixedThresh;
         detections = find_local_maxima(frame, thresh, params.minSep_mm, dx_mm, dz_mm);
 
